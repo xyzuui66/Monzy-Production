@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Vnioapp v11.5 | Monzy Production</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: #000; color: #fff; height: 100dvh; overflow: hidden; margin: 0; }
+        .ios-blur { background: rgba(10, 10, 10, 0.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+        .glass-card { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 24px; }
+        .page { display: none; height: 100%; overflow-y: auto; padding-bottom: 240px; }
+        .page.active { display: block; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .input-vnio { background: #121212; border: 1px solid #333; border-radius: 16px; padding: 12px 18px; width: 100%; color: white; outline: none; transition: 0.3s; }
+        .input-vnio:focus { border-color: #3b82f6; }
+        #maintenance-screen, #banned-screen { display: none; position: fixed; inset: 0; z-index: 10000; background: #000; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .maintenance-active #maintenance-screen, .is-banned #banned-screen { display: flex; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="banned-screen">
+        <i class="fas fa-user-slash text-6xl text-red-600 mb-6"></i>
+        <h1 class="text-3xl font-black italic text-red-600 uppercase">Akses Diblokir</h1>
+    </div>
+
+    <div id="maintenance-screen">
+        <i class="fas fa-tools text-5xl text-yellow-500 mb-6"></i>
+        <h1 class="text-3xl font-black uppercase">Maintenance</h1>
+    </div>
+
+    <div id="auth-modal" class="fixed inset-0 z-[100] bg-black flex items-center justify-center p-8 hidden">
+        <div class="w-full max-w-sm text-center">
+            <h1 class="text-4xl font-black italic mb-2 tracking-tighter">VNIO<span class="text-blue-500">APP</span></h1>
+            <p class="text-zinc-500 text-[10px] mb-8 uppercase font-bold tracking-widest">Powered by Monzy Production</p>
+            <div id="auth-step-1">
+                <input id="login-name" type="text" placeholder="Username" class="input-vnio w-full mb-3">
+                <input id="login-phone" type="tel" placeholder="628xxx" class="input-vnio w-full mb-6">
+                <button onclick="handleLogin()" class="w-full bg-blue-600 py-4 rounded-2xl font-bold">Masuk / Daftar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="main-content" class="flex flex-col h-full hidden">
+        <header class="p-5 flex justify-between items-center ios-blur border-b border-white/5">
+            <div>
+                <h1 class="text-xl font-extrabold italic">VNIO<span class="text-blue-500">APP</span></h1>
+                <p id="typing-status" class="text-[8px] text-blue-400 font-bold uppercase hidden"></p>
+            </div>
+            <img id="user-avatar" class="w-9 h-9 rounded-full border border-white/10 bg-zinc-800 object-cover">
+        </header>
+
+        <main class="flex-1 overflow-hidden relative">
+            <section id="page-chat" class="page active p-5">
+                <div class="glass-card flex flex-col h-[520px]">
+                    <div id="global-messages" class="flex-1 overflow-y-auto p-4 space-y-4"></div>
+                    <div class="p-3 border-t border-white/5 flex gap-2">
+                        <input id="chat-input" type="text" placeholder="Tulis pesan..." class="input-vnio flex-1">
+                        <button onclick="sendChat()" class="bg-blue-600 w-12 h-12 rounded-full flex items-center justify-center"><i class="fas fa-paper-plane"></i></button>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="page-ai" class="page p-5">
+                <div class="glass-card flex flex-col h-[520px]">
+                    <div id="ai-messages" class="flex-1 overflow-y-auto p-4 space-y-4"></div>
+                    <div id="ai-typing" class="px-4 py-2 hidden text-xs italic text-blue-400">AI sedang memproses...</div>
+                    <div class="p-3 border-t border-white/5 flex gap-2">
+                        <input id="ai-input" type="text" placeholder="Tanya Monzy AI..." class="input-vnio flex-1">
+                        <button onclick="askAI()" class="bg-indigo-600 w-12 h-12 rounded-full flex items-center justify-center"><i class="fas fa-robot"></i></button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <nav class="h-24 ios-blur border-t border-white/5 flex justify-around items-center px-4">
+            <div onclick="nav('chat', this)" class="nav-btn text-blue-500 cursor-pointer"><i class="fas fa-comment-dots text-xl"></i></div>
+            <div onclick="nav('ai', this)" class="nav-btn text-zinc-500 cursor-pointer"><i class="fas fa-robot text-xl"></i></div>
+        </nav>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBeGnAjNVmoB-uYGWadpFkEyxlPpuTmz2o",
+            authDomain: "ceziroom.firebaseapp.com",
+            databaseURL: "https://ceziroom-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "ceziroom",
+            storageBucket: "ceziroom.firebasestorage.app",
+            messagingSenderId: "771662623358",
+            appId: "1:771662623358:web:de5b7635f3ff27f19fde2f"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // 2025-12-30: Persistent Session
+        let session = JSON.parse(localStorage.getItem('vnio_session'));
+        let typingTimer;
+
+        // Monzy Central Connect
+        function syncToMonzy() {
+            if(!session) return;
+            const ref = db.ref('monzy_production/active_webs/Vnioapp');
+            ref.update({
+                name: "Vnioapp",
+                lastActive: new Date().toLocaleString(),
+                user: session.username,
+                status: "Online"
+            });
+            ref.onDisconnect().update({ status: "Offline" });
+
+            // Remote Control Listener
+            db.ref('monzy_production/remote_control/Vnioapp').on('value', snap => {
+                if(snap.val() === "SHUTDOWN") {
+                    document.body.innerHTML = "<div class='h-screen flex items-center justify-center bg-black text-red-600 font-bold px-10 text-center'>WEB INI DIMATIKAN OLEH MONZY PRODUCTION</div>";
+                }
+            });
+        }
+
+        // Security & UI Init
+        function initApp() {
+            if(!session) {
+                document.getElementById('auth-modal').classList.remove('hidden');
+            } else {
+                document.getElementById('main-content').classList.remove('hidden');
+                document.getElementById('user-avatar').src = session.avatar;
+                syncToMonzy();
+                
+                // Typing Indicator Real-time
+                db.ref('typing_status').on('value', snap => {
+                    const data = snap.val();
+                    const el = document.getElementById('typing-status');
+                    if(data?.isTyping && data.user !== session.username) {
+                        el.innerText = `${data.user} sedang mengetik...`;
+                        el.classList.remove('hidden');
+                    } else { el.classList.add('hidden'); }
+                });
+            }
+        }
+
+        // Chat & AI Functions
+        async function askAI() {
+            const inp = document.getElementById('ai-input');
+            const q = inp.value.trim(); if(!q) return;
+            appendMsg('ai-messages', session.username, q, 'bg-zinc-800');
+            inp.value = "";
+            document.getElementById('ai-typing').classList.remove('hidden');
+            try {
+                const res = await fetch(`https://itzpire.com/ai/gpt-4?q=${encodeURIComponent(q)}`);
+                const data = await res.json();
+                document.getElementById('ai-typing').classList.add('hidden');
+                appendMsg('ai-messages', "Monzy-AI", data.data.response, 'bg-indigo-600');
+            } catch (e) { document.getElementById('ai-typing').classList.add('hidden'); }
+        }
+
+        function sendChat() {
+            const inp = document.getElementById('chat-input');
+            if(!inp.value.trim()) return;
+            db.ref('global_chats').push({ user: session.username, msg: inp.value });
+            inp.value = "";
+            db.ref('typing_status').set({ isTyping: false });
+        }
+
+        // Listen for typing
+        document.getElementById('chat-input').addEventListener('input', () => {
+            db.ref('typing_status').set({ user: session.username, isTyping: true });
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => db.ref('typing_status').set({ isTyping: false }), 2000);
+        });
+
+        // Chat Listener
+        db.ref('global_chats').limitToLast(50).on('value', snap => {
+            const box = document.getElementById('global-messages');
+            box.innerHTML = Object.values(snap.val() || {}).map(c => `
+                <div class="flex ${c.user === session?.username ? 'justify-end' : 'justify-start'} mb-2">
+                    <div class="${c.user === session?.username ? 'bg-blue-600' : 'bg-zinc-900'} px-4 py-2 rounded-2xl max-w-[80%]">
+                        <p class="text-[7px] font-bold opacity-50 uppercase">${c.user}</p>
+                        <p class="text-sm">${c.msg}</p>
+                    </div>
+                </div>`).join('');
+            box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
+        });
+
+        function appendMsg(id, u, m, cls) {
+            const box = document.getElementById(id);
+            box.innerHTML += `<div class="mb-2"><div class="${cls} px-4 py-2 rounded-2xl inline-block max-w-[80%]"><p class="text-[7px] font-bold uppercase">${u}</p><p class="text-sm">${m}</p></div></div>`;
+            box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
+        }
+
+        function handleLogin() {
+            const u = document.getElementById('login-name').value;
+            const p = document.getElementById('login-phone').value;
+            if(!u || !p) return alert("Lengkapi data!");
+            const data = { username: u, phone: p, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${u}` };
+            localStorage.setItem('vnio_session', JSON.stringify(data));
+            location.reload();
+        }
+
+        function nav(p, btn) {
+            document.querySelectorAll('.page').forEach(e => e.classList.remove('active'));
+            document.getElementById('page-'+p).classList.add('active');
+            document.querySelectorAll('.nav-btn').forEach(n => n.classList.replace('text-blue-500', 'text-zinc-500'));
+            btn.classList.replace('text-zinc-500', 'text-blue-500');
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
